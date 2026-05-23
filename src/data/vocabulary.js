@@ -298,6 +298,31 @@ export const vocabulary = [
   { hanzi: "走", pinyin: "zǒu", english: "to walk / to leave", level: 2, radical: "走" },
   { hanzi: "最", pinyin: "zuì", english: "most / -est", level: 2, radical: "日" },
   { hanzi: "左边", pinyin: "zuǒbiān", english: "left side", level: 2, radical: "工" },
+
+  // HSK 2 — previously missing (completing the official 150)
+  { hanzi: "船", pinyin: "chuán", english: "boat / ship", level: 2, radical: "舟" },
+  { hanzi: "但是", pinyin: "dànshì", english: "but / however", level: 2, radical: "亻" },
+  { hanzi: "地", pinyin: "de", english: "adverbial particle (-ly)", level: 2, radical: "土" },
+  { hanzi: "高", pinyin: "gāo", english: "tall / high", level: 2, radical: "高" },
+  { hanzi: "公斤", pinyin: "gōngjīn", english: "kilogram", level: 2, radical: "八" },
+  { hanzi: "孩子", pinyin: "háizi", english: "child / children", level: 2, radical: "子" },
+  { hanzi: "咖啡", pinyin: "kāfēi", english: "coffee", level: 2, radical: "口" },
+  { hanzi: "累", pinyin: "lèi", english: "tired / exhausted", level: 2, radical: "田" },
+  { hanzi: "男人", pinyin: "nánrén", english: "man / male person", level: 2, radical: "田" },
+  { hanzi: "女人", pinyin: "nǚrén", english: "woman / female person", level: 2, radical: "女" },
+  { hanzi: "它", pinyin: "tā", english: "it (non-human)", level: 2, radical: "宀" },
+  { hanzi: "西瓜", pinyin: "xīguā", english: "watermelon", level: 2, radical: "西" },
+  { hanzi: "希望", pinyin: "xīwàng", english: "to hope / to wish", level: 2, radical: "巾" },
+  { hanzi: "洗", pinyin: "xǐ", english: "to wash / to clean", level: 2, radical: "氵" },
+  { hanzi: "向", pinyin: "xiàng", english: "towards / in the direction of", level: 2, radical: "口" },
+  { hanzi: "小时", pinyin: "xiǎoshí", english: "hour", level: 2, radical: "小" },
+  { hanzi: "笑", pinyin: "xiào", english: "to laugh / to smile", level: 2, radical: "竹" },
+  { hanzi: "雪", pinyin: "xuě", english: "snow", level: 2, radical: "雨" },
+  { hanzi: "已经", pinyin: "yǐjīng", english: "already", level: 2, radical: "己" },
+  { hanzi: "阴", pinyin: "yīn", english: "cloudy / overcast", level: 2, radical: "阝" },
+  { hanzi: "元", pinyin: "yuán", english: "yuan (currency unit)", level: 2, radical: "二" },
+  { hanzi: "再", pinyin: "zài", english: "again / once more", level: 2, radical: "冂" },
+  { hanzi: "张", pinyin: "zhāng", english: "measure word (flat things)", level: 2, radical: "弓" },
 ];
 
 export const getRandomWords = (count, excludeWords = []) => {
