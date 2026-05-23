@@ -1,122 +1,131 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { vocabulary, generateChoices } from "./data/vocabulary";
 import { submitScore, getLeaderboard } from "./supabase";
 import "./index.css";
 
-const QUESTIONS_PER_GAME = 10;
-const MAX_LIVES = 3;
-const STREAK_BONUS_THRESHOLD = 3;
 const BASE_POINTS = 100;
 const STREAK_BONUS = 50;
+const STREAK_BONUS_THRESHOLD = 3;
 
 function shuffle(arr) {
   return [...arr].sort(() => Math.random() - 0.5);
 }
 
-function buildQuestions() {
-  const pool = shuffle(vocabulary).slice(0, QUESTIONS_PER_GAME);
-  return pool.map((word) => ({
-    correct: word,
-    choices: generateChoices(word, vocabulary),
-  }));
+// Endless shuffled queue — refills when exhausted
+function makeQueue() {
+  return shuffle([...vocabulary]);
+}
+
+function buildQuestion(word) {
+  return { correct: word, choices: generateChoices(word, vocabulary) };
 }
 
 // ── Screens ────────────────────────────────────────────────────────────────
 
-function StartScreen({ onStart }) {
+function StartScreen({ onStart, onLeaderboard }) {
   return (
     <div className="screen start-screen">
       <div className="logo-wrap">
-        <span className="logo-hanzi">汉</span>
-        <div className="logo-text">
-          <h1>HANZI<br />HUNTER</h1>
-          <p className="tagline">HSK 1–2 Character Challenge</p>
+        <div className="logo-top">
+          <span className="logo-hanzi">汉</span>
+          <div className="logo-text">
+            <h1>HANZI<br />HUNTER</h1>
+          </div>
         </div>
+        <p className="tagline">HSK 1–2 Character Challenge</p>
+        <div className="survival-badge">☠️ One-Strike Survival Mode</div>
       </div>
+
       <div className="how-to">
         <div className="rule"><span className="rule-icon">🎯</span><span>Match the English meaning to the correct hanzi</span></div>
-        <div className="rule"><span className="rule-icon">❤️</span><span>3 lives · 10 questions per round</span></div>
-        <div className="rule"><span className="rule-icon">🔥</span><span>3-in-a-row streak = +50 bonus points</span></div>
-        <div className="rule"><span className="rule-icon">📖</span><span>Wrong answers reveal pinyin tips</span></div>
+        <div className="rule"><span className="rule-icon">☠️</span><span>One wrong answer — game over. No second chances.</span></div>
+        <div className="rule"><span className="rule-icon">🔥</span><span>3-in-a-row streak = +50 bonus points per question</span></div>
+        <div className="rule"><span className="rule-icon">♾️</span><span>Endless questions — survive as long as you can!</span></div>
       </div>
+
       <button className="btn-primary" onClick={onStart}>开始 · START</button>
+      <button className="btn-secondary" onClick={onLeaderboard}>🏆 Leaderboard</button>
     </div>
   );
 }
 
 function GameScreen({ onGameOver }) {
-  const [questions] = useState(buildQuestions);
-  const [qIndex, setQIndex] = useState(0);
-  const [lives, setLives] = useState(MAX_LIVES);
+  const queueRef = useRef(makeQueue());
+  const usedRef = useRef(new Set());
+  const [question, setQuestion] = useState(() => {
+    const q = queueRef.current.shift();
+    usedRef.current.add(q.hanzi);
+    return buildQuestion(q);
+  });
+
   const [score, setScore] = useState(0);
   const [streak, setStreak] = useState(0);
+  const [qCount, setQCount] = useState(1);
   const [selected, setSelected] = useState(null);
   const [phase, setPhase] = useState("question"); // question | feedback
-  const [feedbackCorrect, setFeedbackCorrect] = useState(false);
+  const [correct, setCorrect] = useState(false);
   const [streakPopped, setStreakPopped] = useState(false);
   const [shakeWrong, setShakeWrong] = useState(false);
+  const [dying, setDying] = useState(false);
 
-  const current = questions[qIndex];
+  const nextWord = useCallback(() => {
+    if (queueRef.current.length === 0) {
+      queueRef.current = makeQueue().filter(w => !usedRef.current.has(w.hanzi));
+      if (queueRef.current.length === 0) {
+        // All words used — full reset
+        usedRef.current.clear();
+        queueRef.current = makeQueue();
+      }
+    }
+    const word = queueRef.current.shift();
+    usedRef.current.add(word.hanzi);
+    return buildQuestion(word);
+  }, []);
 
   const handleChoice = useCallback((choice) => {
     if (phase !== "question") return;
-    const isCorrect = choice.hanzi === current.correct.hanzi;
+    const isCorrect = choice.hanzi === question.correct.hanzi;
     setSelected(choice.hanzi);
-    setFeedbackCorrect(isCorrect);
+    setCorrect(isCorrect);
     setPhase("feedback");
 
     if (isCorrect) {
       const newStreak = streak + 1;
       setStreak(newStreak);
       const bonus = newStreak >= STREAK_BONUS_THRESHOLD ? STREAK_BONUS : 0;
-      setScore((s) => s + BASE_POINTS + bonus);
+      setScore(s => s + BASE_POINTS + bonus);
       if (bonus > 0) {
         setStreakPopped(true);
-        setTimeout(() => setStreakPopped(false), 1000);
+        setTimeout(() => setStreakPopped(false), 900);
       }
     } else {
-      setStreak(0);
-      setLives((l) => l - 1);
       setShakeWrong(true);
+      setDying(true);
       setTimeout(() => setShakeWrong(false), 500);
+      // Delay game-over so player sees the correct answer
+      setTimeout(() => onGameOver(score, qCount), 1800);
     }
-  }, [phase, current, streak]);
+  }, [phase, question, streak, score, qCount, onGameOver]);
 
   const handleNext = useCallback(() => {
-    const newLives = feedbackCorrect ? lives : lives;
-    if (!feedbackCorrect && lives - 1 <= 0) {
-      onGameOver(score, qIndex + 1);
-      return;
-    }
-    if (qIndex + 1 >= QUESTIONS_PER_GAME) {
-      onGameOver(score + (feedbackCorrect ? 0 : 0), QUESTIONS_PER_GAME);
-      return;
-    }
-    setQIndex((i) => i + 1);
+    setQuestion(nextWord());
     setSelected(null);
     setPhase("question");
-    setFeedbackCorrect(false);
-  }, [feedbackCorrect, lives, qIndex, score, onGameOver]);
+    setCorrect(false);
+    setQCount(c => c + 1);
+  }, [nextWord]);
 
-  // After wrong → if lives run out, end immediately
-  useEffect(() => {
-    if (phase === "feedback" && !feedbackCorrect && lives <= 0) {
-      setTimeout(() => onGameOver(score, qIndex + 1), 1400);
-    }
-  }, [phase, feedbackCorrect, lives, score, qIndex, onGameOver]);
-
-  const progress = ((qIndex) / QUESTIONS_PER_GAME) * 100;
+  // Progress indicator — cycles through 150 questions visually
+  const progressPct = ((qCount - 1) % vocabulary.length) / vocabulary.length * 100;
 
   return (
     <div className="screen game-screen">
       {/* Header */}
       <div className="game-header">
         <div className="lives">
-          {Array.from({ length: MAX_LIVES }).map((_, i) => (
-            <span key={i} className={`heart ${i < lives ? "alive" : "dead"}`}>♥</span>
-          ))}
+          <span className={`heart ${dying ? "dead" : "alive"}`}>♥</span>
         </div>
-        <div className="q-counter">{qIndex + 1} / {QUESTIONS_PER_GAME}</div>
+        <div className="q-counter">#{qCount}</div>
         <div className="score-display">
           <span className="score-label">分</span>
           <span className="score-value">{score}</span>
@@ -125,32 +134,34 @@ function GameScreen({ onGameOver }) {
       </div>
 
       {/* Progress */}
-      <div className="progress-bar"><div className="progress-fill" style={{ width: `${progress}%` }} /></div>
+      <div className="progress-bar">
+        <div className="progress-fill" style={{ width: `${progressPct}%` }} />
+      </div>
 
       {/* Streak badge */}
-      {streak >= 3 && (
-        <div className="streak-badge">🔥 {streak} streak!</div>
+      {streak >= 3 && !dying && (
+        <div className="streak-badge">🔥 {streak}-streak!</div>
       )}
 
       {/* Question */}
       <div className={`question-card ${shakeWrong ? "shake" : ""}`}>
         <p className="question-label">What is the hanzi for…</p>
-        <h2 className="english-word">{current.correct.english}</h2>
+        <h2 className="english-word">{question.correct.english}</h2>
         {phase === "feedback" && (
           <p className="pinyin-reveal">
-            {feedbackCorrect
-              ? `✓ ${current.correct.hanzi} · ${current.correct.pinyin}`
-              : `✗ Correct: ${current.correct.hanzi} · ${current.correct.pinyin}`}
+            {correct
+              ? `✓ ${question.correct.hanzi} · ${question.correct.pinyin}`
+              : `✗ Answer: ${question.correct.hanzi} · ${question.correct.pinyin}`}
           </p>
         )}
       </div>
 
       {/* Choices */}
       <div className="choices-grid">
-        {current.choices.map((choice) => {
+        {question.choices.map((choice) => {
           let cls = "choice-btn";
           if (phase === "feedback") {
-            if (choice.hanzi === current.correct.hanzi) cls += " correct";
+            if (choice.hanzi === question.correct.hanzi) cls += " correct";
             else if (choice.hanzi === selected) cls += " wrong";
             else cls += " dimmed";
           }
@@ -170,11 +181,16 @@ function GameScreen({ onGameOver }) {
         })}
       </div>
 
-      {/* Next button */}
-      {phase === "feedback" && lives > 0 && (
+      {/* Next / Game Over */}
+      {phase === "feedback" && !dying && (
         <button className="btn-next" onClick={handleNext}>
-          {qIndex + 1 >= QUESTIONS_PER_GAME ? "See Results →" : "Next →"}
+          Next →
         </button>
+      )}
+      {dying && (
+        <div className="game-over-banner">
+          ☠️ Game over — loading your result…
+        </div>
       )}
     </div>
   );
@@ -186,44 +202,52 @@ function ResultScreen({ score, questionsAnswered, onRestart, onLeaderboard }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  const accuracy = Math.round((score / (questionsAnswered * BASE_POINTS)) * 100);
-  const grade = score >= 900 ? "S" : score >= 700 ? "A" : score >= 500 ? "B" : score >= 300 ? "C" : "D";
-  const gradeMsg = { S: "Master!", A: "Excellent!", B: "Good job!", C: "Keep practicing!", D: "Don't give up!" };
+  const grade =
+    score >= 2000 ? "S" :
+    score >= 1200 ? "A" :
+    score >= 700  ? "B" :
+    score >= 300  ? "C" : "D";
+  const gradeMsg = { S: "Legendary!", A: "Excellent!", B: "Good job!", C: "Keep at it!", D: "Don't give up!" };
 
   const handleSubmit = async () => {
-    if (!username.trim()) { setError("Enter a username first"); return; }
-    setSubmitting(true);
-    setError("");
+    if (!username.trim()) { setError("Enter a name first"); return; }
+    setSubmitting(true); setError("");
     try {
       await submitScore(username.trim(), score);
       setSubmitted(true);
     } catch {
-      setError("Couldn't save score. Check your connection.");
+      setError("Couldn't save score. Try again.");
     }
     setSubmitting(false);
   };
 
   return (
     <div className="screen result-screen">
-      <div className="grade-circle grade-{grade.toLowerCase()}">
+      <div className="grade-circle">
         <span className="grade-letter">{grade}</span>
       </div>
       <h2 className="result-title">{gradeMsg[grade]}</h2>
       <div className="result-stats">
-        <div className="stat"><span className="stat-val">{score}</span><span className="stat-lbl">Score</span></div>
-        <div className="stat"><span className="stat-val">{questionsAnswered}</span><span className="stat-lbl">Questions</span></div>
+        <div className="stat">
+          <span className="stat-val">{score}</span>
+          <span className="stat-lbl">Score</span>
+        </div>
+        <div className="stat">
+          <span className="stat-val">{questionsAnswered}</span>
+          <span className="stat-lbl">Survived</span>
+        </div>
       </div>
 
       {!submitted ? (
         <div className="submit-section">
-          <p className="submit-prompt">Submit your score to the leaderboard?</p>
+          <p className="submit-prompt">Add your score to the leaderboard?</p>
           <input
             className="username-input"
             placeholder="Your name / nickname"
             value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            onChange={e => setUsername(e.target.value)}
             maxLength={20}
-            onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+            onKeyDown={e => e.key === "Enter" && handleSubmit()}
           />
           {error && <p className="error-msg">{error}</p>}
           <button className="btn-primary" onClick={handleSubmit} disabled={submitting}>
@@ -231,7 +255,7 @@ function ResultScreen({ score, questionsAnswered, onRestart, onLeaderboard }) {
           </button>
         </div>
       ) : (
-        <p className="submitted-msg">✓ Score submitted!</p>
+        <p className="submitted-msg">✓ Score saved!</p>
       )}
 
       <div className="result-actions">
@@ -246,6 +270,7 @@ function LeaderboardScreen({ onBack }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const medals = ["🥇", "🥈", "🥉"];
 
   useEffect(() => {
     getLeaderboard(20)
@@ -253,8 +278,6 @@ function LeaderboardScreen({ onBack }) {
       .catch(() => setError("Couldn't load leaderboard."))
       .finally(() => setLoading(false));
   }, []);
-
-  const medals = ["🥇", "🥈", "🥉"];
 
   return (
     <div className="screen leaderboard-screen">
@@ -281,7 +304,7 @@ function LeaderboardScreen({ onBack }) {
 // ── Root ───────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [screen, setScreen] = useState("start"); // start | game | result | leaderboard
+  const [screen, setScreen] = useState("start");
   const [finalScore, setFinalScore] = useState(0);
   const [finalQs, setFinalQs] = useState(0);
 
@@ -294,17 +317,10 @@ export default function App() {
   return (
     <div className="app-root">
       <div className="bg-glow" />
-      {screen === "start" && <StartScreen onStart={() => setScreen("game")} />}
-      {screen === "game" && <GameScreen onGameOver={handleGameOver} />}
-      {screen === "result" && (
-        <ResultScreen
-          score={finalScore}
-          questionsAnswered={finalQs}
-          onRestart={() => setScreen("game")}
-          onLeaderboard={() => setScreen("leaderboard")}
-        />
-      )}
-      {screen === "leaderboard" && <LeaderboardScreen onBack={() => setScreen("result")} />}
+      {screen === "start"       && <StartScreen onStart={() => setScreen("game")} onLeaderboard={() => setScreen("leaderboard")} />}
+      {screen === "game"        && <GameScreen onGameOver={handleGameOver} />}
+      {screen === "result"      && <ResultScreen score={finalScore} questionsAnswered={finalQs} onRestart={() => setScreen("game")} onLeaderboard={() => setScreen("leaderboard")} />}
+      {screen === "leaderboard" && <LeaderboardScreen onBack={() => setScreen(finalScore > 0 ? "result" : "start")} />}
     </div>
   );
 }
